@@ -1,4 +1,3 @@
-# contact.py
 class Contact:
     def __init__(self, name: str, phone: str, email: str):
         self.name = name.strip()

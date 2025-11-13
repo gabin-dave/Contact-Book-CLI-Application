@@ -25,3 +25,6 @@ class ContactBook:
             return False
         self._contacts.append(Contact(name, phone, email))
         return True
+    
+    def get_all_contacts(self) -> List[Contact]:
+        return sorted(self._contacts, key=lambda c: c.name.lower())
