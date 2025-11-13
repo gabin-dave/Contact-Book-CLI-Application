@@ -1,14 +1,32 @@
 from contact_book import ContactBook
 from contact import Contact 
-import re,os,time
+import re,os,readline
 from typing import Tuple,List
+
+
 
 
 
 class ContactCLI:
     def __init__(self, data_file: str):
         self.book = ContactBook(data_file)
+    
+    @staticmethod
+    def enable_autofilled(options):
+        """Enable tab-completion for a list of options (e.g., filenames)."""
+        try:
+            import readline
+        except Exception:
+            return
 
+        def completer(text, state):
+            matches = [o for o in options if o.startswith(text)]
+            return matches[state] if state < len(matches) else None
+
+        readline.set_completer_delims(" \t\n")
+        readline.set_completer(completer)
+        readline.parse_and_bind("tab: complete")
+        
     def run(self):
         self.book.load()
         while True:
@@ -33,10 +51,18 @@ class ContactCLI:
                 
             elif choice == "3":
                 self.clear_screen()
+                if not self._ensure_data_available():
+                    continue
+
                 print("\n--- Search Contact by Name ---")
-                search_name = input("Enter name to search: ").strip()
-                results = self.search_contact(search_name)
-                print(self._format_contacts_for_display(results,f'Search Results for "{search_name}"'))
+                results, search_name = self.search_contact()
+
+                if not results:
+                    if search_name:
+                        print(f'\nNo contact found with name containing "{search_name}".')
+                    input("\nPress Enter")
+                    continue
+                print(self._format_contacts_for_display(results, f'Search Results for \"{search_name}\"'))
                 input("\nPress Enter")
                 
             elif choice == "4":
@@ -46,8 +72,7 @@ class ContactCLI:
                 
             elif choice == "5":
                 self.clear_screen()
-                print("\nDeleting contacts feature coming next.")
-                input("\nPress Enter")
+                self.delete_contact()
             
             elif choice == "6":
                 self.clear_screen()
@@ -65,7 +90,7 @@ class ContactCLI:
         ### For Windows or MacOs/Linux###
         os.system('cls' if os.name == 'nt' else 'clear')
                 
-    def check_field(self, field_type: str, value: str) -> Tuple[bool, str]:
+    def check_field(self, field_type: str, value: str,exclude: Contact = None) -> Tuple[bool, str]:
         
         if field_type == "name":
             name_pattern = r"^[A-Za-zÀ-ÖØ-öø-ÿ'-]+\s[A-Za-zÀ-ÖØ-öø-ÿ'-]+$"
@@ -75,7 +100,7 @@ class ContactCLI:
                 return (False,
                         "Error: Enter a valid full name (first and last, letters only). "
                         "Examples: John Doe, Jean-Luc Picard, O'Connor Smith")
-            if any(c.name.lower() == value.lower() for c in self.book._contacts):
+            if any((c is not exclude) and (c.name.lower() == value.lower()) for c in self.book._contacts):
                 return False, f'Error: Contact "{value}" already exists. Please enter a different name.'
             return True, value
 
@@ -88,7 +113,7 @@ class ContactCLI:
                 return (False,
                         "Error: Invalid phone number format. Examples: +123456789, (555) 123-4567, 123 456 7890")
             normalized_input = re.sub(r"[^\d+]", "", value)
-            if any(re.sub(r"[^\d+]", "", c.phone) == normalized_input for c in self.book._contacts):
+            if any((c is not exclude) and (re.sub(r"[^\d+]", "", c.phone)) == normalized_input for c in self.book._contacts):
                 return False, f'Error: Phone number "{value}" is already used by another contact.'
             return True, value
 
@@ -102,7 +127,7 @@ class ContactCLI:
                 return (False,
                         "Error: Invalid email address format. Examples: john.doe@email.com, "
                         "alice@company.org, user+test@domain.co.uk")
-            if any(c.email.lower() == value.lower() for c in self.book._contacts):
+            if any((c is not exclude) and (c.email.lower() == value.lower()) for c in self.book._contacts):
                 return False, f'Error: Email: "{value}" already exists. Please enter a different Email adress.'
             return True, value
 
@@ -118,7 +143,7 @@ class ContactCLI:
             name_input = input("Enter full name: ").strip()
             valid, message = self.check_field("name", name_input)
             if valid:
-                name = message
+                name = message.title()
                 break
             print(message)
 
@@ -166,9 +191,29 @@ class ContactCLI:
         input("\nPress Enter")
         
         
-    def search_contact(self,name:str) -> List[Contact]:
-        name = name.strip().lower()
-        return [c for c in self.book._contacts if name in c.name.lower()]
+    def search_contact(self) -> Tuple[List[Contact],str]:
+        if not self._ensure_data_available():
+            return [], ""
+
+        names = sorted({c.name for c in self.book._contacts if c.name})
+        if names:
+            print("\n(Press TAB to auto-complete a contact name.)")
+
+        ContactCLI.enable_autofilled(names)
+
+        query = input("Enter name to search (or 'b' to go back): ").strip()
+        if query.lower() == "b":
+            return [], ""
+
+        q = query.lower()
+
+        exact = [c for c in self.book._contacts if c.name.lower() == q]
+        if exact:
+            return exact, query
+
+        results = [c for c in self.book._contacts if q in c.name.lower()]
+        self.clear_screen()
+        return results, query
 
     def _ensure_data_available(self) -> bool:
         if not self.book.get_all_contacts():  
@@ -178,74 +223,128 @@ class ContactCLI:
         return True
     
     def _select_contact_by_search(self):
-        if not self._ensure_data_available():
-            return None
 
         print("\n--- Edit Contact ---")
-        query = input("Enter a name to search: ").strip()
-        results = self.search_contact(query)
+        results, query = self.search_contact()
 
         if not results:
-            print(f'\nNo contact found with name containing "{query}".')
-            input("\nPress Enter to return to the main menu...")
+            if query:
+                print(f'\nNo contact found with name containing "{query}".')
             return None
 
-        # Show results in a compact list for selection
-        print(f'\nFound {len(results)} result{"s" if len(results)!=1 else ""}:')
+        print(f'\nFound {len(results)} result{"s" if len(results) != 1 else ""}:')
         for i, c in enumerate(results, start=1):
             print(f"{i}. {c.name} | {c.phone} | {c.email}")
 
-        # Let the user pick
-        while True:
-            choice = input("\nEnter the number to edit (or 'b' to go back): ").strip().lower()
-            if choice == "b":
-                return None
-            if choice.isdigit():
-                idx = int(choice)
-                if 1 <= idx <= len(results):
-                    return results[idx - 1]
-            print("Invalid choice. Please enter a valid number or 'b'.")
+        if len(results) == 1:
+            return results[0]
+
+        name_input = input("\nEnter the exact contact name to edit (or 'b' to go back): ").strip()
+        if name_input.lower() == "b":
+            return None
+
+        match = next((c for c in results if c.name.lower() == name_input.lower()), None)
+        if not match:
+            print(f'No contact found matching "{name_input}".')
+            return None
+
+        return match
 
     
     def edit_contact(self):
         self.clear_screen()
         contact = self._select_contact_by_search()
-        if not contact:
-            return None
-            
-    
+        if contact is None:
+            return
 
         print("\nCurrent contact info:")
         print(f"Name : {contact.name}")
         print(f"Phone: {contact.phone}")
         print(f"Email: {contact.email}")
 
-        print("\nEnter new details (press Enter to keep current):")
-        new_name  = input("New name: ").strip()
-        new_phone = input("New phone number: ").strip()
-        new_email = input("New email address: ").strip()
+        print("\nEnter new details. Press Enter to keep the current value.")
 
-        if new_name and new_name != contact.name:
-            ok, msg = self.check_field("name", new_name)
-            if not ok:
-                print(msg); input("\nPress Enter"); return
+        # --- Name loop ---
+        while True:
+            raw = input(f"New name [{contact.name}]: ").strip()
+            if raw == "":
+                new_name = contact.name  # keep current
+                break
+            ok, msg = self.check_field("name", raw, exclude=contact)
+            if ok:
+                new_name = msg.title()
+                break
+            print(msg)
 
-        if new_phone and new_phone != contact.phone:
-            ok, msg = self.check_field("phone", new_phone)
-            if not ok:
-                print(msg); input("\nPress Enter"); return
+        while True:
+            raw = input(f"New phone number [{contact.phone}]: ").strip()
+            if raw == "":
+                new_phone = contact.phone
+                break
+            ok, msg = self.check_field("phone", raw, exclude=contact)
+            if ok:
+                new_phone = msg
+                break
+            print(msg)
 
-        if new_email and new_email != contact.email:
-            ok, msg = self.check_field("email", new_email)
-            if not ok:
-                print(msg); input("\nPress Enter"); return
+        while True:
+            raw = input(f"New email address [{contact.email}]: ").strip()
+            if raw == "":
+                new_email = contact.email
+                break
+            ok, msg = self.check_field("email", raw, exclude=contact)
+            if ok:
+                new_email = msg
+                break
+            print(msg)
 
-        if new_name:  contact.name  = new_name
-        if new_phone: contact.phone = new_phone
-        if new_email: contact.email = new_email
+        contact.name = new_name
+        contact.phone = new_phone
+        contact.email = new_email
 
         self.book.save()
         print("\nContact updated successfully!")
         input("\nPress Enter")
 
         
+    def delete_contact(self):
+        if not self._ensure_data_available():
+            return
+
+        print("\n--- Delete Contact ---")
+
+        # Build autocomplete options from all names
+        names = sorted({c.name for c in self.book._contacts if c.name})
+        if names:
+            print("\n(Press TAB to auto-complete a contact name.)")
+
+        # Use your existing static method
+        ContactCLI.enable_autofilled(names)
+
+        name_input = input("Enter the name of the contact to delete (or 'b' to go back): ").strip()
+        if name_input.lower() == "b":
+            return
+
+        # Case-insensitive exact match (unique names assumed)
+        contact = next((c for c in self.book._contacts if c.name.lower() == name_input.lower()), None)
+        if not contact:
+            print(f'No contact found matching "{name_input}".')
+            input("\nPress Enter")
+            return
+
+        # Show summary & confirm (per project spec)
+        print("\nSelected contact:")
+        print(f"Name : {contact.name}")
+        print(f"Phone: {contact.phone}")
+        print(f"Email: {contact.email}")
+
+        confirm = input(f'\nAre you sure you want to delete "{contact.name}"? (yes/no): ').strip().lower()
+        if confirm not in ("y", "yes"):
+            print("Deletion cancelled.")
+            input("\nPress Enter")
+            return
+
+        self.book._contacts.remove(contact)
+        self.book.save()
+        print("Contact deleted!")
+        input("\nPress Enter")

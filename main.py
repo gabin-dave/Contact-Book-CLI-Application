@@ -1,4 +1,4 @@
-import json,os,readline
+import json,os
 import os
 from cli import ContactCLI
 DATA_DIR = "Contacts_data"
@@ -6,17 +6,7 @@ DATA_DIR = "Contacts_data"
 
 
 
-def enable_filename_completion(options):
-    if not readline:
-        return
 
-    def completer(text, state):
-        matches = [o for o in options if o.startswith(text)]
-        return matches[state] if state < len(matches) else None
-
-    readline.set_completer_delims(" \t\n")
-    readline.set_completer(completer)
-    readline.parse_and_bind("tab: complete")
 
 
 def ensure_json_name(name: str) -> str:
@@ -47,7 +37,7 @@ if __name__ == "__main__":
     else:
         print("\nNo data files found yet. You can create one now.")
 
-    enable_filename_completion(existing)
+    ContactCLI.enable_autofilled(existing)
 
     file_name = input("Enter the name of your data file (e.g., contacts.json): ").strip()
     file_name = ensure_json_name(file_name)
@@ -62,4 +52,5 @@ if __name__ == "__main__":
         print(f"Using existing file: {file_path}")
 
     ContactCLI(file_path).run()
+    
     
