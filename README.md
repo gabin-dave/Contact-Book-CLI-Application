@@ -43,7 +43,7 @@ The CLI uses the **`readline`** library (or **`pyreadline3`** on Windows) to ena
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/<your-username>/Contact-Book-CLI-Application.git
+git clone https://github.com/gabin-dave/Contact-Book-CLI-Application.git
 cd Contact-Book-CLI-Application
 pip install rich questionary
 pip install pyreadline3
