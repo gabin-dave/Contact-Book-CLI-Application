@@ -1,7 +1,18 @@
 from contact_book import ContactBook
 from contact import Contact 
-import re,os,readline
+import re,os,questionary,csv
 from typing import Tuple,List
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+
+console = Console()
+
+def banner(title: str):
+    console.print(Panel.fit(Text(title, justify="center", style="bold cyan"), border_style="cyan"))
+
+
 
 
 
@@ -13,7 +24,6 @@ class ContactCLI:
     
     @staticmethod
     def enable_autofilled(options):
-        """Enable tab-completion for a list of options (e.g., filenames)."""
         try:
             import readline
         except Exception:
@@ -26,30 +36,32 @@ class ContactCLI:
         readline.set_completer_delims(" \t\n")
         readline.set_completer(completer)
         readline.parse_and_bind("tab: complete")
-        
+    
+
     def run(self):
         self.book.load()
         while True:
             self.clear_screen()
-            print("\n===============================") 
-            print(f"Contact Book ({self.book.data_file})") 
-            print("===============================") 
-            print("1. Add Contact") 
-            print("2. View All Contacts") 
-            print("3. Search Contact by Name") 
-            print("4. Edit Contact") 
-            print("5. Delete Contact") 
-            print("6. Save and Exit")
-            choice = input("Choose an option (1-6): ").strip()
+            banner(f"Contact Book ({self.book.data_file})")
+            choice = questionary.select(
+                "What would you like to do?",
+                choices=[
+                    "Add Contact",
+                    "View All Contacts",
+                    "Search Contact by Name",
+                    "Edit Contact",
+                    "Delete Contact",
+                    "Export contacts to CSV",
+                    "Save and Exit",
+                    
+                ],
+            ).ask()
 
-            if choice == "1":
-                self.clear_screen()
-                self._add_contact()
-            elif choice == "2":
-                self.clear_screen()
-                self._view_all_contacts()
-                
-            elif choice == "3":
+            if choice == "Add Contact":
+                self.clear_screen(); self._add_contact()
+            elif choice == "View All Contacts":
+                self.clear_screen(); self._view_all_contacts()
+            elif choice == "Search Contact by Name":
                 self.clear_screen()
                 if not self._ensure_data_available():
                     continue
@@ -62,29 +74,26 @@ class ContactCLI:
                         print(f'\nNo contact found with name containing "{search_name}".')
                     input("\nPress Enter")
                     continue
-                print(self._format_contacts_for_display(results, f'Search Results for \"{search_name}\"'))
+                self.display_contacts(results, f'Search Results for "{search_name}"')
                 input("\nPress Enter")
                 
-            elif choice == "4":
+            elif choice == "Edit Contact":
+                self.clear_screen(); self.edit_contact()
+            elif choice == "Delete Contact":
+                self.clear_screen(); self.delete_contact()
+            elif choice == "Export contacts to CSV":
                 self.clear_screen()
-                self.edit_contact()
-                
-                
-            elif choice == "5":
-                self.clear_screen()
-                self.delete_contact()
+                self.export_to_csv()
             
-            elif choice == "6":
+            else:
                 self.clear_screen()
-                print("\nSaving contacts to file...\n")
+                console.print("[green]Saving contacts…[/green]")
                 self.book.save()
-                print("Data saved")
+                console.print("[bold green]Done![/bold green]")
                 input("")
                 self.clear_screen()
-                
                 break
-            else:
-                print("Feature not implemented yet.")
+
     
     def clear_screen(self):
         ### For Windows or MacOs/Linux###
@@ -171,15 +180,24 @@ class ContactCLI:
 
 
 
-    def _format_contacts_for_display(self, contacts: List[Contact],Value) -> str:
-        if not contacts:
-            return "No contacts found."
-        lines = [f"\n\n==== {Value} ===="]
+    def display_contacts(self, contacts: List[Contact], title: str, show_total: bool = True) -> None:
+        """Render a styled banner + contacts table using Rich."""
+        banner(title)
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("#", width=4)
+        table.add_column("Name", style="bold")
+        table.add_column("Phone", style="cyan")
+        table.add_column("Email", style="yellow")
+
         for i, c in enumerate(contacts, start=1):
-            lines.append(f"{i}. {c.name} | {c.phone} | {c.email}")
-        lines.append("=======================\n\n")
-        lines.append(f"Total: {len(contacts)} contacts")
-        return "\n".join(lines)
+            table.add_row(str(i), c.name, c.phone, c.email)
+
+        console.print(table)
+
+        if show_total:
+            console.print(f"[dim]Total: {len(contacts)} contact{'s' if len(contacts) != 1 else ''}[/dim]")
+
 
     
     def _view_all_contacts(self):
@@ -187,7 +205,7 @@ class ContactCLI:
         if not self._ensure_data_available():
             return
         contacts = self.book.get_all_contacts()
-        print(self._format_contacts_for_display(contacts,"All Contacts"))
+        self.display_contacts(contacts, "All Contacts")
         input("\nPress Enter")
         
         
@@ -214,6 +232,7 @@ class ContactCLI:
         results = [c for c in self.book._contacts if q in c.name.lower()]
         self.clear_screen()
         return results, query
+    
 
     def _ensure_data_available(self) -> bool:
         if not self.book.get_all_contacts():  
@@ -223,32 +242,31 @@ class ContactCLI:
         return True
     
     def _select_contact_by_search(self):
+        
+        console.print(Panel.fit(Text("Edit Contact", justify="center", style="bold cyan"),border_style="cyan"))
 
-        print("\n--- Edit Contact ---")
         results, query = self.search_contact()
 
         if not results:
             if query:
-                print(f'\nNo contact found with name containing "{query}".')
+                console.print(f'\n[bold red]No contact found[/bold red] with name containing "[yellow]{query}[/]".')
             return None
+        self.display_contacts(results, "Edit Contact")
 
-        print(f'\nFound {len(results)} result{"s" if len(results) != 1 else ""}:')
-        for i, c in enumerate(results, start=1):
-            print(f"{i}. {c.name} | {c.phone} | {c.email}")
 
         if len(results) == 1:
             return results[0]
-
-        name_input = input("\nEnter the exact contact name to edit (or 'b' to go back): ").strip()
+        console.print("\n[i]Type the exact contact name to edit, or[/i] [bold]b[/bold] [i]to go back.[/i]")
+        name_input = input("Name: ").strip()
         if name_input.lower() == "b":
             return None
 
         match = next((c for c in results if c.name.lower() == name_input.lower()), None)
         if not match:
-            print(f'No contact found matching "{name_input}".')
+            console.print(f'[bold red]No contact found matching[/bold red] "[yellow]{name_input}[/]".')
             return None
-
         return match
+            
 
     
     def edit_contact(self):
@@ -257,7 +275,7 @@ class ContactCLI:
         if contact is None:
             return
 
-        print("\nCurrent contact info:")
+        print("\nCurrent contact info:\n")
         print(f"Name : {contact.name}")
         print(f"Phone: {contact.phone}")
         print(f"Email: {contact.email}")
@@ -347,4 +365,33 @@ class ContactCLI:
         self.book._contacts.remove(contact)
         self.book.save()
         print("Contact deleted!")
+        input("\nPress Enter")
+        
+    def export_to_csv(self):
+        if not self._ensure_data_available():
+            return
+
+        print("\n--- Export Contacts to CSV ---")
+
+        default_name = os.path.splitext(os.path.basename(self.book.data_file))[0] + "_export.csv"
+
+        file_name = input(f"Enter CSV file name (default: {default_name}): ").strip()
+        if not file_name:
+            file_name = default_name
+        if not file_name.lower().endswith(".csv"):
+            file_name += ".csv"
+
+        export_path = os.path.join(os.path.dirname(self.book.data_file), file_name)
+
+        try:
+            with open(export_path, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Name", "Phone", "Email"])
+                for c in self.book._contacts:
+                    writer.writerow([c.name, c.phone, c.email])
+
+            print(f'\nContacts successfully exported to: "{export_path}"')
+        except Exception as e:
+            print(f"\n[Error] Could not export contacts: {e}")
+
         input("\nPress Enter")
